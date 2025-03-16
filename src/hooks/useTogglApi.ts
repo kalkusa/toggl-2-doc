@@ -63,17 +63,22 @@ export function useTogglApi(): UseTogglApiReturn {
 
   const fetchAllTimeEntries = useCallback(async (headers: HeadersInit): Promise<TogglTimeEntry[]> => {
     let allEntries: TogglTimeEntry[] = []
-    let page = 1
     let hasMore = true
+    let beforeParam: string | null = null
 
     while (hasMore) {
-      console.log(`Fetching page ${page}...`)
-      const response = await fetch(
-        `/toggl/api/v9/me/time_entries?page=${page}`, {
-          method: 'GET',
-          headers
-        }
-      )
+      // Build URL with before parameter if we have it
+      let url = '/toggl/api/v9/me/time_entries'
+      if (beforeParam) {
+        url += `?before=${beforeParam}`
+      }
+      
+      console.log(`Fetching time entries${beforeParam ? ' before ' + beforeParam : ''}...`)
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers
+      })
 
       if (!response.ok) {
         throw new Error('Failed to fetch time entries')
@@ -81,16 +86,34 @@ export function useTogglApi(): UseTogglApiReturn {
 
       const entries = await response.json() as TogglTimeEntry[]
       allEntries = [...allEntries, ...entries]
-      console.log(`Received ${entries.length} entries on page ${page}. Total so far: ${allEntries.length}`)
+      console.log(`Received ${entries.length} entries. Total so far: ${allEntries.length}`)
 
-      // If we got no entries, we've reached the end
+      // If we got fewer entries than the max per page, we've likely reached the end
+      // But to be safe, we'll only stop if we got zero entries
       if (entries.length === 0) {
         hasMore = false
         console.log('No more entries, stopping pagination')
       } else {
-        page++
-        // Add a small delay between pages to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200))
+        // Find the oldest entry in this batch
+        // Sort entries by start date (oldest first)
+        const sortedEntries = [...entries].sort((a, b) => 
+          new Date(a.start).getTime() - new Date(b.start).getTime()
+        )
+        
+        const oldestEntry = sortedEntries[0]
+        
+        if (oldestEntry) {
+          // Format date in RFC3339 format for the 'before' parameter
+          // Subtract 1 second to avoid duplicates
+          const oldestDate = new Date(oldestEntry.start)
+          oldestDate.setSeconds(oldestDate.getSeconds() - 1)
+          beforeParam = oldestDate.toISOString()
+          
+          // Add a small delay between requests to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 300))
+        } else {
+          hasMore = false
+        }
       }
     }
 
