@@ -1,0 +1,275 @@
+{
+  "info": {
+    "name": "Toggl API Collection",
+    "description": "Collection for accessing Toggl Track API - Authentication and Time Entries",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Get User Data",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/me",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "me"
+              ]
+            },
+            "description": "Authenticates with Toggl API and returns user data"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// This script encodes your API token in the correct format",
+                  "const apiToken = pm.environment.get('apiToken');",
+                  "if (apiToken) {",
+                  "    const encodedToken = btoa(`${apiToken}:api_token`);",
+                  "    pm.environment.set('encodedApiToken', encodedToken);",
+                  "    console.log('API token encoded successfully');",
+                  "} else {",
+                  "    console.error('API token not found in environment variables');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Save workspace ID for future requests",
+                  "if (pm.response.code === 200) {",
+                  "    const responseData = pm.response.json();",
+                  "    if (responseData && responseData.default_workspace_id) {",
+                  "        pm.environment.set('workspaceId', responseData.default_workspace_id);",
+                  "        console.log(`Workspace ID set to: ${responseData.default_workspace_id}`);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Requests for authenticating with Toggl API"
+    },
+    {
+      "name": "Time Entries",
+      "item": [
+        {
+          "name": "Get Latest Time Entries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/me/time_entries",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "me",
+                "time_entries"
+              ]
+            },
+            "description": "Gets latest time entries for the authenticated user"
+          }
+        },
+        {
+          "name": "Get Time Entries Before Date",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/me/time_entries?before={{beforeDate}}",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "me",
+                "time_entries"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "{{beforeDate}}"
+                }
+              ]
+            },
+            "description": "Gets time entries before a specific date (RFC3339 format)"
+          }
+        },
+        {
+          "name": "Get Current Time Entry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/me/time_entries/current",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "me",
+                "time_entries",
+                "current"
+              ]
+            },
+            "description": "Gets the currently running time entry (if any)"
+          }
+        },
+        {
+          "name": "Get Project Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/workspaces/{{workspaceId}}/projects/{{projectId}}",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "workspaces",
+                "{{workspaceId}}",
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": "Gets details for a specific project"
+          }
+        },
+        {
+          "name": "Stop Time Entry",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{togglBaseUrl}}/api/v9/workspaces/{{workspaceId}}/time_entries/{{timeEntryId}}/stop",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v9",
+                "workspaces",
+                "{{workspaceId}}",
+                "time_entries",
+                "{{timeEntryId}}",
+                "stop"
+              ]
+            },
+            "description": "Stops a running time entry"
+          }
+        }
+      ],
+      "description": "Requests for managing time entries"
+    }
+  ],
+  "variable": [
+    {
+      "key": "togglBaseUrl",
+      "value": "https://api.track.toggl.com",
+      "type": "string"
+    },
+    {
+      "key": "encodedApiToken",
+      "value": "YOUR_API_TOKEN_BASE64_ENCODED_WITH_API_TOKEN",
+      "type": "string",
+      "description": "Base64 encoded string in format apiToken:api_token"
+    },
+    {
+      "key": "workspaceId",
+      "value": "YOUR_WORKSPACE_ID",
+      "type": "string"
+    },
+    {
+      "key": "projectId",
+      "value": "YOUR_PROJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "timeEntryId",
+      "value": "YOUR_TIME_ENTRY_ID",
+      "type": "string"
+    },
+    {
+      "key": "beforeDate",
+      "value": "2023-01-01T00:00:00Z",
+      "type": "string",
+      "description": "RFC3339 formatted date"
+    }
+  ]
+} 

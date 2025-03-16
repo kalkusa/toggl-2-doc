@@ -1,0 +1,51 @@
+{
+  "id": "d3e2f1a0-5c41-4b3a-b7e3-9d5a6f4c1b2a",
+  "name": "Toggl API Environment",
+  "values": [
+    {
+      "key": "togglBaseUrl",
+      "value": "https://api.track.toggl.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "apiToken",
+      "value": "YOUR_API_TOKEN",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "encodedApiToken",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "workspaceId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "projectId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "timeEntryId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "beforeDate",
+      "value": "2023-01-01T00:00:00Z",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2023-11-12T12:00:00.000Z",
+  "_postman_exported_using": "Postman/10.19.0"
+} 
