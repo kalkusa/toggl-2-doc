@@ -3,6 +3,7 @@ import { TogglTimeEntry, TogglUser, TogglProject } from '../types/toggl'
 import { toaster } from '../components/ui/toaster'
 
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+const PAGE_SIZE = 50 // Number of entries per page
 
 interface CachedProject extends TogglProject {
   cachedAt: number;
@@ -61,6 +62,39 @@ export function useTogglApi(): UseTogglApiReturn {
     return null
   }, [getCachedProject, cacheProject])
 
+  const fetchAllTimeEntries = useCallback(async (headers: HeadersInit): Promise<TogglTimeEntry[]> => {
+    let allEntries: TogglTimeEntry[] = []
+    let page = 1
+    let hasMore = true
+
+    while (hasMore) {
+      const response = await fetch(
+        `/toggl/api/v9/me/time_entries?page=${page}&per_page=${PAGE_SIZE}`, {
+          method: 'GET',
+          headers
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch time entries')
+      }
+
+      const entries = await response.json() as TogglTimeEntry[]
+      allEntries = [...allEntries, ...entries]
+
+      // If we got fewer entries than the page size, we've reached the end
+      if (entries.length < PAGE_SIZE) {
+        hasMore = false
+      } else {
+        page++
+        // Add a small delay between pages to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+
+    return allEntries
+  }, [])
+
   const fetchData = useCallback(async (apiToken: string) => {
     if (!apiToken) {
       toaster.create({
@@ -91,22 +125,11 @@ export function useTogglApi(): UseTogglApiReturn {
       const userData = await userResponse.json() as TogglUser
       setUserData(userData)
 
-      // Then fetch time entries
-      const startDate = new Date()
-      startDate.setDate(startDate.getDate() - 30) // Last 30 days
-      
-      const timeEntriesResponse = await fetch(
-        `/toggl/api/v9/me/time_entries?start_date=${startDate.toISOString()}&end_date=${new Date().toISOString()}`, {
-          method: 'GET',
-          headers
-        }
-      )
+      // Fetch all time entries with pagination
+      const timeEntries = await fetchAllTimeEntries(headers)
 
-      if (!timeEntriesResponse.ok) {
-        throw new Error('Failed to fetch time entries')
-      }
-
-      let timeEntries = await timeEntriesResponse.json() as TogglTimeEntry[]
+      // Sort time entries by start date in descending order (newest first)
+      timeEntries.sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime())
 
       // Fetch project details for each entry that has a project_id
       const uniqueProjectIds = [...new Set(timeEntries.filter(entry => entry.project_id).map(entry => entry.project_id!))]
@@ -131,14 +154,14 @@ export function useTogglApi(): UseTogglApiReturn {
       }
 
       // Attach project details to time entries
-      timeEntries = timeEntries.map(entry => ({
+      const entriesWithProjects = timeEntries.map(entry => ({
         ...entry,
         project: entry.project_id ? projectsMap.get(entry.project_id) : undefined
       }))
 
-      setTimeEntries(timeEntries)
+      setTimeEntries(entriesWithProjects)
 
-      console.log('Time entries:', timeEntries.map(entry => ({
+      console.log('Time entries:', entriesWithProjects.map(entry => ({
         description: entry.description,
         start: new Date(entry.start).toLocaleString(),
         stop: new Date(entry.stop).toLocaleString(),
@@ -148,7 +171,7 @@ export function useTogglApi(): UseTogglApiReturn {
 
       toaster.create({
         title: 'Success',
-        description: `Connected as ${userData.fullname}. Found ${timeEntries.length} time entries.`,
+        description: `Connected as ${userData.fullname}. Found ${entriesWithProjects.length} time entries.`,
         type: 'success'
       })
     } catch (error) {
@@ -161,7 +184,7 @@ export function useTogglApi(): UseTogglApiReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [fetchProject])
+  }, [fetchProject, fetchAllTimeEntries])
 
   return {
     isLoading,
