@@ -3,7 +3,6 @@ import { TogglTimeEntry, TogglUser, TogglProject } from '../types/toggl'
 import { toaster } from '../components/ui/toaster'
 
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-const PAGE_SIZE = 50 // Number of entries per page
 
 interface CachedProject extends TogglProject {
   cachedAt: number;
@@ -68,8 +67,9 @@ export function useTogglApi(): UseTogglApiReturn {
     let hasMore = true
 
     while (hasMore) {
+      console.log(`Fetching page ${page}...`)
       const response = await fetch(
-        `/toggl/api/v9/me/time_entries?page=${page}&per_page=${PAGE_SIZE}`, {
+        `/toggl/api/v9/me/time_entries?page=${page}`, {
           method: 'GET',
           headers
         }
@@ -81,10 +81,12 @@ export function useTogglApi(): UseTogglApiReturn {
 
       const entries = await response.json() as TogglTimeEntry[]
       allEntries = [...allEntries, ...entries]
+      console.log(`Received ${entries.length} entries on page ${page}. Total so far: ${allEntries.length}`)
 
-      // If we got fewer entries than the page size, we've reached the end
-      if (entries.length < PAGE_SIZE) {
+      // If we got no entries, we've reached the end
+      if (entries.length === 0) {
         hasMore = false
+        console.log('No more entries, stopping pagination')
       } else {
         page++
         // Add a small delay between pages to avoid rate limiting
@@ -92,6 +94,7 @@ export function useTogglApi(): UseTogglApiReturn {
       }
     }
 
+    console.log(`Finished fetching all entries. Total: ${allEntries.length}`)
     return allEntries
   }, [])
 
