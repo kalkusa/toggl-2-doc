@@ -18,11 +18,11 @@ export default function HomePage() {
 
     setIsLoading(true)
     try {
-      const response = await fetch('https://api.track.toggl.com/api/v9/me', {
+      const response = await fetch('/toggl/api/v9/me', {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + btoa(apiToken + ':api_token')
+          'Authorization': 'Basic ' + btoa(apiToken + ':api_token'),
+          'Content-Type': 'application/json'
         }
       })
 
@@ -36,7 +36,9 @@ export default function HomePage() {
         description: `Connected as ${data.fullname}`,
         type: 'success'
       })
-    } catch {
+      return data
+    } catch (error) {
+      console.error('Authentication error:', error)
       toaster.create({
         title: 'Error',
         description: 'Failed to authenticate with Toggl. Please check your API token.',
