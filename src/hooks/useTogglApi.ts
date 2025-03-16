@@ -1,0 +1,172 @@
+import { useState, useCallback } from 'react'
+import { TogglTimeEntry, TogglUser, TogglProject } from '../types/toggl'
+import { toaster } from '../components/ui/toaster'
+
+const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+
+interface CachedProject extends TogglProject {
+  cachedAt: number;
+}
+
+interface UseTogglApiReturn {
+  isLoading: boolean;
+  timeEntries: TogglTimeEntry[];
+  userData: TogglUser | null;
+  fetchData: (apiToken: string) => Promise<void>;
+}
+
+export function useTogglApi(): UseTogglApiReturn {
+  const [isLoading, setIsLoading] = useState(false)
+  const [timeEntries, setTimeEntries] = useState<TogglTimeEntry[]>([])
+  const [userData, setUserData] = useState<TogglUser | null>(null)
+
+  const getCachedProject = useCallback((projectId: number): TogglProject | null => {
+    const cached = localStorage.getItem(`project_${projectId}`)
+    if (!cached) return null
+
+    const project = JSON.parse(cached) as CachedProject
+    if (Date.now() - project.cachedAt > CACHE_EXPIRY) {
+      localStorage.removeItem(`project_${projectId}`)
+      return null
+    }
+
+    return project
+  }, [])
+
+  const cacheProject = useCallback((project: TogglProject) => {
+    const cachedProject: CachedProject = {
+      ...project,
+      cachedAt: Date.now()
+    }
+    localStorage.setItem(`project_${project.id}`, JSON.stringify(cachedProject))
+  }, [])
+
+  const fetchProject = useCallback(async (projectId: number, headers: HeadersInit, workspaceId: number) => {
+    // Try to get from cache first
+    const cachedProject = getCachedProject(projectId)
+    if (cachedProject) {
+      return cachedProject
+    }
+
+    // If not in cache, fetch from API
+    const projectResponse = await fetch(`/toggl/api/v9/workspaces/${workspaceId}/projects/${projectId}`, {
+      method: 'GET',
+      headers
+    })
+    if (projectResponse.ok) {
+      const project = await projectResponse.json() as TogglProject
+      cacheProject(project)
+      return project
+    }
+    return null
+  }, [getCachedProject, cacheProject])
+
+  const fetchData = useCallback(async (apiToken: string) => {
+    if (!apiToken) {
+      toaster.create({
+        title: 'Error',
+        description: 'Please enter your Toggl API token',
+        type: 'error'
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const headers = {
+        'Authorization': 'Basic ' + btoa(apiToken + ':api_token'),
+        'Content-Type': 'application/json'
+      }
+
+      // First authenticate and get user data
+      const userResponse = await fetch('/toggl/api/v9/me', {
+        method: 'GET',
+        headers
+      })
+
+      if (!userResponse.ok) {
+        throw new Error('Authentication failed')
+      }
+
+      const userData = await userResponse.json() as TogglUser
+      setUserData(userData)
+
+      // Then fetch time entries
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - 30) // Last 30 days
+      
+      const timeEntriesResponse = await fetch(
+        `/toggl/api/v9/me/time_entries?start_date=${startDate.toISOString()}&end_date=${new Date().toISOString()}`, {
+          method: 'GET',
+          headers
+        }
+      )
+
+      if (!timeEntriesResponse.ok) {
+        throw new Error('Failed to fetch time entries')
+      }
+
+      let timeEntries = await timeEntriesResponse.json() as TogglTimeEntry[]
+
+      // Fetch project details for each entry that has a project_id
+      const uniqueProjectIds = [...new Set(timeEntries.filter(entry => entry.project_id).map(entry => entry.project_id!))]
+      const projectsMap = new Map<number, TogglProject>()
+
+      // Process projects in smaller batches to avoid rate limiting
+      const batchSize = 5
+      for (let i = 0; i < uniqueProjectIds.length; i += batchSize) {
+        const batch = uniqueProjectIds.slice(i, i + batchSize)
+        await Promise.all(
+          batch.map(async (projectId) => {
+            const project = await fetchProject(projectId, headers, userData.default_workspace_id)
+            if (project) {
+              projectsMap.set(projectId, project)
+            }
+          })
+        )
+        // Add a small delay between batches if there are more to process
+        if (i + batchSize < uniqueProjectIds.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
+
+      // Attach project details to time entries
+      timeEntries = timeEntries.map(entry => ({
+        ...entry,
+        project: entry.project_id ? projectsMap.get(entry.project_id) : undefined
+      }))
+
+      setTimeEntries(timeEntries)
+
+      console.log('Time entries:', timeEntries.map(entry => ({
+        description: entry.description,
+        start: new Date(entry.start).toLocaleString(),
+        stop: new Date(entry.stop).toLocaleString(),
+        duration: entry.duration,
+        project: entry.project?.name || 'No project'
+      })))
+
+      toaster.create({
+        title: 'Success',
+        description: `Connected as ${userData.fullname}. Found ${timeEntries.length} time entries.`,
+        type: 'success'
+      })
+    } catch (error) {
+      console.error('Authentication error:', error)
+      toaster.create({
+        title: 'Error',
+        description: 'Failed to authenticate with Toggl. Please check your API token.',
+        type: 'error'
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [fetchProject])
+
+  return {
+    isLoading,
+    timeEntries,
+    userData,
+    fetchData
+  }
+} 
