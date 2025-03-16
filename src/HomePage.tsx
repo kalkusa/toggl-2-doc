@@ -1,13 +1,24 @@
 import { Box, Container, Center, Text, VStack, Input, Button, Card } from '@chakra-ui/react'
 import { useState } from 'react'
 import { toaster } from './components/ui/toaster'
-import { TogglTimeEntry, TogglUser } from './types/toggl'
+import { TogglTimeEntry, TogglUser, TogglProject } from './types/toggl'
 
 export default function HomePage() {
   const [apiToken, setApiToken] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [timeEntries, setTimeEntries] = useState<TogglTimeEntry[]>([])
   const [userData, setUserData] = useState<TogglUser | null>(null)
+
+  const fetchProject = async (projectId: number, headers: HeadersInit) => {
+    const projectResponse = await fetch(`/toggl/api/v9/workspaces/${userData?.default_workspace_id}/projects/${projectId}`, {
+      method: 'GET',
+      headers
+    })
+    if (projectResponse.ok) {
+      return await projectResponse.json() as TogglProject
+    }
+    return null
+  }
 
   const handleConvert = async () => {
     if (!apiToken) {
@@ -22,12 +33,14 @@ export default function HomePage() {
     setIsLoading(true)
     try {
       // First authenticate and get user data
+      const headers = {
+        'Authorization': 'Basic ' + btoa(apiToken + ':api_token'),
+        'Content-Type': 'application/json'
+      }
+
       const userResponse = await fetch('/toggl/api/v9/me', {
         method: 'GET',
-        headers: {
-          'Authorization': 'Basic ' + btoa(apiToken + ':api_token'),
-          'Content-Type': 'application/json'
-        }
+        headers
       })
 
       if (!userResponse.ok) {
@@ -44,10 +57,7 @@ export default function HomePage() {
       const timeEntriesResponse = await fetch(
         `/toggl/api/v9/me/time_entries?start_date=${startDate.toISOString()}&end_date=${new Date().toISOString()}`, {
           method: 'GET',
-          headers: {
-            'Authorization': 'Basic ' + btoa(apiToken + ':api_token'),
-            'Content-Type': 'application/json'
-          }
+          headers
         }
       )
 
@@ -55,7 +65,27 @@ export default function HomePage() {
         throw new Error('Failed to fetch time entries')
       }
 
-      const timeEntries = await timeEntriesResponse.json() as TogglTimeEntry[]
+      let timeEntries = await timeEntriesResponse.json() as TogglTimeEntry[]
+
+      // Fetch project details for each entry that has a project_id
+      const uniqueProjectIds = [...new Set(timeEntries.filter(entry => entry.project_id).map(entry => entry.project_id!))]
+      const projectsMap = new Map<number, TogglProject>()
+
+      await Promise.all(
+        uniqueProjectIds.map(async (projectId) => {
+          const project = await fetchProject(projectId, headers)
+          if (project) {
+            projectsMap.set(projectId, project)
+          }
+        })
+      )
+
+      // Attach project details to time entries
+      timeEntries = timeEntries.map(entry => ({
+        ...entry,
+        project: entry.project_id ? projectsMap.get(entry.project_id) : undefined
+      }))
+
       setTimeEntries(timeEntries)
 
       console.log('Time entries:', timeEntries.map(entry => ({
@@ -63,7 +93,7 @@ export default function HomePage() {
         start: new Date(entry.start).toLocaleString(),
         stop: new Date(entry.stop).toLocaleString(),
         duration: entry.duration,
-        project: entry.project?.name
+        project: entry.project?.name || 'No project'
       })))
 
       toaster.create({
