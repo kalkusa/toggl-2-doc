@@ -16,11 +16,12 @@ export function LoginForm({
   entriesCount 
 }: LoginFormProps) {
   return (
-    <VStack gap={4}>
+    <VStack gap={4} width="100%">
       <Input 
         placeholder="API Token" 
         type="password" 
         size="lg"
+        width="100%"
         value={apiToken}
         onChange={(e) => onApiTokenChange(e.target.value)}
       />

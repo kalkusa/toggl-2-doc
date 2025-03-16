@@ -1,14 +1,20 @@
-import { Box, Container, Center, Text, Card } from '@chakra-ui/react'
+import { Box, Container, Center, Text, Card, Button, VStack } from '@chakra-ui/react'
 import { useState } from 'react'
 import { LoginForm } from './components/LoginForm'
 import { useTogglApi } from './hooks/useTogglApi'
+import { useDocumentGenerator } from './hooks/useDocumentGenerator'
 
 export default function HomePage() {
   const [apiToken, setApiToken] = useState('')
   const { isLoading, timeEntries, fetchData } = useTogglApi()
+  const { generateDocument } = useDocumentGenerator()
 
   const handleConvert = () => {
     fetchData(apiToken)
+  }
+
+  const handleDownload = () => {
+    generateDocument(timeEntries)
   }
 
   return (
@@ -23,13 +29,25 @@ export default function HomePage() {
               </Text>
             </Card.Header>
             <Card.Body>
-              <LoginForm 
-                apiToken={apiToken}
-                onApiTokenChange={setApiToken}
-                onSubmit={handleConvert}
-                isLoading={isLoading}
-                entriesCount={timeEntries.length}
-              />
+              <VStack gap={4}>
+                <LoginForm 
+                  apiToken={apiToken}
+                  onApiTokenChange={setApiToken}
+                  onSubmit={handleConvert}
+                  isLoading={isLoading}
+                  entriesCount={timeEntries.length}
+                />
+                {timeEntries.length > 0 && (
+                  <Button
+                    colorScheme="green"
+                    width="100%"
+                    size="lg"
+                    onClick={handleDownload}
+                  >
+                    Download Word Document
+                  </Button>
+                )}
+              </VStack>
             </Card.Body>
           </Card.Root>
         </Center>
