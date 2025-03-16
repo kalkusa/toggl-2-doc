@@ -1,13 +1,13 @@
-import { Box, Container } from '@chakra-ui/react'
-import './App.css'
+import { ChakraProvider, createSystem, defaultConfig } from '@chakra-ui/react'
+import HomePage from './HomePage'
+
+const system = createSystem(defaultConfig)
 
 function App() {
   return (
-    <Container maxW="100%" p={0}>
-      <Box p={4} bg="blue.400" minH="100vh">
-        
-      </Box>
-    </Container>
+    <ChakraProvider value={system}>
+      <HomePage />
+    </ChakraProvider>
   )
 }
 
