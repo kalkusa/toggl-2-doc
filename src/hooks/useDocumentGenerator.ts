@@ -1,4 +1,4 @@
-import { Document, Paragraph, Table, TableRow, TableCell, BorderStyle, Packer, WidthType } from 'docx'
+import { Document, Paragraph, Table, TableRow, TableCell, BorderStyle, Packer, WidthType, TextRun } from 'docx'
 import { TogglTimeEntry } from '../types/toggl'
 
 interface UseDocumentGeneratorReturn {
@@ -31,7 +31,11 @@ const formatDate = (dateString: string | undefined): string => {
 
 export function useDocumentGenerator(): UseDocumentGeneratorReturn {
   const generateDocument = async (timeEntries: TogglTimeEntry[]) => {
-    const columnWidths = [30, 20, 20, 20, 10]
+    // Using fixed width in points (1440 points = ~1 inch, document is 8.5 inches)
+    const fixedColumnWidths = {
+      description: 3000, // ~2 inches (150px equivalent)
+      other: 1000        // for the other columns
+    }
 
     const doc = new Document({
       sections: [{
@@ -55,7 +59,8 @@ export function useDocumentGenerator(): UseDocumentGeneratorReturn {
               size: 100,
               type: WidthType.PERCENTAGE,
             },
-            columnWidths: columnWidths,
+            layout: "fixed",
+            // Set preferred widths without filling in the columnWidths array
             rows: [
               // Header row
               new TableRow({
@@ -65,9 +70,25 @@ export function useDocumentGenerator(): UseDocumentGeneratorReturn {
                   'Start',
                   'Stop',
                   'Duration',
-                ].map((header, index) => 
-                  new TableCell({
-                    children: [new Paragraph({ text: header })],
+                ].map((header, index) => {
+                  const cellWidth = index === 0 
+                    ? fixedColumnWidths.description 
+                    : fixedColumnWidths.other
+                    
+                  return new TableCell({
+                    children: [
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: header
+                          })
+                        ],
+                        spacing: {
+                          before: 120,
+                          after: 120
+                        }
+                      })
+                    ],
                     borders: {
                       top: { style: BorderStyle.SINGLE, size: 1 },
                       bottom: { style: BorderStyle.SINGLE, size: 1 },
@@ -75,25 +96,38 @@ export function useDocumentGenerator(): UseDocumentGeneratorReturn {
                       right: { style: BorderStyle.SINGLE, size: 1 },
                     },
                     width: {
-                      size: columnWidths[index],
-                      type: WidthType.PERCENTAGE,
+                      size: cellWidth,
+                      type: WidthType.DXA
                     },
+                    verticalAlign: "center"
                   })
-                ),
+                }),
               }),
               // Data rows
               ...timeEntries.map(entry => {
                 const stopTime = formatDate(entry.stop)
+                // Process description to manually wrap text if needed
+                const description = entry.description || 'No description'
+                // Split by newlines first, then by length
+                const descLines = description.split('\n')
+                
                 return new TableRow({
                   children: [
-                    entry.description || 'No description',
-                    entry.project?.name || 'No project',
-                    formatDate(entry.start),
-                    stopTime,
-                    formatDuration(entry.duration, stopTime !== '-'),
-                  ].map((text, index) => 
+                    // Description cell with potential multiple lines
                     new TableCell({
-                      children: [new Paragraph({ text })],
+                      children: descLines.map(line => 
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: line
+                            })
+                          ],
+                          spacing: {
+                            before: 120,
+                            after: 120
+                          }
+                        })
+                      ),
                       borders: {
                         top: { style: BorderStyle.SINGLE, size: 1 },
                         bottom: { style: BorderStyle.SINGLE, size: 1 },
@@ -101,11 +135,120 @@ export function useDocumentGenerator(): UseDocumentGeneratorReturn {
                         right: { style: BorderStyle.SINGLE, size: 1 },
                       },
                       width: {
-                        size: columnWidths[index],
-                        type: WidthType.PERCENTAGE,
+                        size: fixedColumnWidths.description,
+                        type: WidthType.DXA
                       },
+                      verticalAlign: "center"
+                    }),
+                    // Project cell
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: entry.project?.name || 'No project'
+                            })
+                          ],
+                          spacing: {
+                            before: 120,
+                            after: 120
+                          }
+                        })
+                      ],
+                      borders: {
+                        top: { style: BorderStyle.SINGLE, size: 1 },
+                        bottom: { style: BorderStyle.SINGLE, size: 1 },
+                        left: { style: BorderStyle.SINGLE, size: 1 },
+                        right: { style: BorderStyle.SINGLE, size: 1 },
+                      },
+                      width: {
+                        size: fixedColumnWidths.other,
+                        type: WidthType.DXA
+                      },
+                      verticalAlign: "center"
+                    }),
+                    // Start cell
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: formatDate(entry.start)
+                            })
+                          ],
+                          spacing: {
+                            before: 120,
+                            after: 120
+                          }
+                        })
+                      ],
+                      borders: {
+                        top: { style: BorderStyle.SINGLE, size: 1 },
+                        bottom: { style: BorderStyle.SINGLE, size: 1 },
+                        left: { style: BorderStyle.SINGLE, size: 1 },
+                        right: { style: BorderStyle.SINGLE, size: 1 },
+                      },
+                      width: {
+                        size: fixedColumnWidths.other,
+                        type: WidthType.DXA
+                      },
+                      verticalAlign: "center"
+                    }),
+                    // Stop cell
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: stopTime
+                            })
+                          ],
+                          spacing: {
+                            before: 120,
+                            after: 120
+                          }
+                        })
+                      ],
+                      borders: {
+                        top: { style: BorderStyle.SINGLE, size: 1 },
+                        bottom: { style: BorderStyle.SINGLE, size: 1 },
+                        left: { style: BorderStyle.SINGLE, size: 1 },
+                        right: { style: BorderStyle.SINGLE, size: 1 },
+                      },
+                      width: {
+                        size: fixedColumnWidths.other,
+                        type: WidthType.DXA
+                      },
+                      verticalAlign: "center"
+                    }),
+                    // Duration cell
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: formatDuration(entry.duration, stopTime !== '-')
+                            })
+                          ],
+                          spacing: {
+                            before: 120,
+                            after: 120
+                          }
+                        })
+                      ],
+                      borders: {
+                        top: { style: BorderStyle.SINGLE, size: 1 },
+                        bottom: { style: BorderStyle.SINGLE, size: 1 },
+                        left: { style: BorderStyle.SINGLE, size: 1 },
+                        right: { style: BorderStyle.SINGLE, size: 1 },
+                      },
+                      width: {
+                        size: fixedColumnWidths.other,
+                        type: WidthType.DXA
+                      },
+                      verticalAlign: "center"
                     })
-                  ),
+                  ],
                 })
               }),
             ],
