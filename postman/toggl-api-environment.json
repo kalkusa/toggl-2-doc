@@ -43,6 +43,24 @@
       "value": "2023-01-01T00:00:00Z",
       "type": "default",
       "enabled": true
+    },
+    {
+      "key": "startDate",
+      "value": "2020-01-01",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "endDate",
+      "value": "2024-12-31",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "firstRowNumber",
+      "value": "0",
+      "type": "default",
+      "enabled": true
     }
   ],
   "_postman_variable_scope": "environment",

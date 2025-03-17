@@ -63,63 +63,261 @@ export function useTogglApi(): UseTogglApiReturn {
 
   const fetchAllTimeEntries = useCallback(async (headers: HeadersInit): Promise<TogglTimeEntry[]> => {
     let allEntries: TogglTimeEntry[] = []
-    let hasMore = true
-    let beforeParam: string | null = null
-
-    while (hasMore) {
-      // Build URL with before parameter if we have it
-      let url = '/toggl/api/v9/me/time_entries'
-      if (beforeParam) {
-        url += `?before=${beforeParam}`
+    
+    // Create a mutable copy of headers that we can add workspace ID to
+    let headersWithWorkspace = { ...headers } as Record<string, string>
+    
+    // Fetch the user data first to get workspace ID if not already available
+    if (!headersWithWorkspace['X-Workspace-Id']) {
+      try {
+        const userResponse = await fetch('/toggl/api/v9/me', { 
+          method: 'GET',
+          headers 
+        })
+        
+        if (!userResponse.ok) {
+          throw new Error('Failed to fetch user data')
+        }
+        
+        const userData = await userResponse.json() as TogglUser
+        headersWithWorkspace = {
+          ...headersWithWorkspace,
+          'X-Workspace-Id': userData.default_workspace_id.toString()
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error)
+        throw new Error('Failed to get workspace ID')
       }
+    }
+    
+    // Get workspace ID from headers
+    const workspaceId = headersWithWorkspace['X-Workspace-Id']
+    
+    if (!workspaceId) {
+      throw new Error('Workspace ID not available')
+    }
+    
+    // The Reports API has a maximum date range of 366 days
+    // We need to split our requests into yearly chunks
+    
+    // Start with the current year
+    const today = new Date()
+    let endDate = new Date(today)
+    
+    // Keep going back in time until we don't get any more entries
+    let hasMoreYears = true
+    
+    while (hasMoreYears) {
+      // Set current chunk's end date
+      const endDateStr = endDate.toISOString().split('T')[0] // Format as YYYY-MM-DD
       
-      console.log(`Fetching time entries${beforeParam ? ' before ' + beforeParam : ''}...`)
+      // Set start date to exactly 365 days before end date
+      const startDate = new Date(endDate)
+      startDate.setDate(startDate.getDate() - 365)
+      const startDateStr = startDate.toISOString().split('T')[0] // Format as YYYY-MM-DD
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch time entries')
-      }
-
-      const entries = await response.json() as TogglTimeEntry[]
-      allEntries = [...allEntries, ...entries]
-      console.log(`Received ${entries.length} entries. Total so far: ${allEntries.length}`)
-
-      // If we got fewer entries than the max per page, we've likely reached the end
-      // But to be safe, we'll only stop if we got zero entries
-      if (entries.length === 0) {
-        hasMore = false
-        console.log('No more entries, stopping pagination')
+      console.log(`Fetching time entries from ${startDateStr} to ${endDateStr}...`)
+      
+      // For each yearly chunk, we need to handle pagination
+      const entriesForYearChunk = await fetchTimeEntriesForDateRange(
+        startDateStr, 
+        endDateStr, 
+        workspaceId, 
+        headersWithWorkspace
+      )
+      
+      if (entriesForYearChunk.length > 0) {
+        console.log(`Found ${entriesForYearChunk.length} entries for the period ${startDateStr} to ${endDateStr}`)
+        allEntries = [...allEntries, ...entriesForYearChunk]
+        
+        // Move back in time for the next chunk
+        endDate = new Date(startDate)
+        endDate.setDate(endDate.getDate() - 1)
       } else {
-        // Find the oldest entry in this batch
-        // Sort entries by start date (oldest first)
-        const sortedEntries = [...entries].sort((a, b) => 
-          new Date(a.start).getTime() - new Date(b.start).getTime()
+        // If we didn't get any entries for this chunk, we can stop going back in time
+        hasMoreYears = false
+        console.log(`No entries found for the period ${startDateStr} to ${endDateStr}, stopping search`)
+      }
+    }
+    
+    console.log(`Finished fetching all entries. Total: ${allEntries.length}`)
+    return allEntries
+  }, [])
+
+  // Helper function to fetch time entries for a specific date range with pagination
+  const fetchTimeEntriesForDateRange = async (
+    startDate: string, 
+    endDate: string, 
+    workspaceId: string, 
+    headers: Record<string, string>
+  ): Promise<TogglTimeEntry[]> => {
+    let entriesForRange: TogglTimeEntry[] = []
+    let hasMore = true
+    let firstRowNumber: number | null = null
+    
+    while (hasMore) {
+      // Define the request body
+      const requestBody: Record<string, string | number | boolean> = {
+        start_date: startDate,
+        end_date: endDate, 
+        page_size: 300, // Increased page size from 50 to 300
+        order_by: "date",
+        order_dir: "asc"
+      }
+      
+      // Only include first_row_number if we have a valid value from a previous response
+      if (firstRowNumber !== null) {
+        requestBody.first_row_number = firstRowNumber
+        console.log(`Fetching page with first row number: ${firstRowNumber}...`)
+      } else {
+        console.log(`Fetching first page of entries...`)
+      }
+      
+      try {
+        // Call the Reports API to fetch time entries
+        const response = await fetch(
+          `/toggl/reports/api/v3/workspace/${workspaceId}/search/time_entries`, {
+            method: 'POST',
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+          }
         )
         
-        const oldestEntry = sortedEntries[0]
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Failed to fetch time entries: ${response.status} ${response.statusText} - ${errorText}`)
+        }
         
-        if (oldestEntry) {
-          // Format date in RFC3339 format for the 'before' parameter
-          // Subtract 1 second to avoid duplicates
-          const oldestDate = new Date(oldestEntry.start)
-          oldestDate.setSeconds(oldestDate.getSeconds() - 1)
-          beforeParam = oldestDate.toISOString()
-          
+        // Get the X-Next-Row-Number header for pagination
+        const nextRowNumber = response.headers.get('X-Next-Row-Number')
+        console.log(`Next row number from headers: ${nextRowNumber}`)
+        
+        // Parse the time entries from the response
+        const responseData = await response.json()
+        
+        if (!responseData || !Array.isArray(responseData)) {
+          throw new Error('Invalid response format')
+        }
+        
+        console.log(`Received ${responseData.length} response items.`)
+        
+        // Define types for the Reports API response structure
+        interface TimeEntryItem {
+          id: number;
+          seconds: number;
+          start: string;
+          stop: string;
+          at: string;
+          at_tz: string;
+        }
+        
+        interface ReportsResponseItem {
+          user_id: number;
+          username: string;
+          project_id: number | null;
+          task_id: number | null;
+          billable: boolean;
+          description: string;
+          tag_ids: number[];
+          time_entries: TimeEntryItem[];
+          row_number: number;
+        }
+        
+        // Transform the data from Reports API format to TogglTimeEntry format
+        // The response has a nested structure where each item contains a time_entries array
+        const transformedEntries: TogglTimeEntry[] = []
+
+        responseData.forEach((item: ReportsResponseItem) => {
+          // Process each time entry in the nested time_entries array
+          if (item.time_entries && Array.isArray(item.time_entries)) {
+            item.time_entries.forEach((entry: TimeEntryItem) => {
+              // Map the nested time entry fields to our TogglTimeEntry structure
+              const timeEntry: TogglTimeEntry = {
+                id: entry.id,
+                workspace_id: Number(workspaceId),
+                project_id: item.project_id,
+                task_id: item.task_id,
+                billable: item.billable,
+                start: entry.start, // Already in ISO format
+                stop: entry.stop, // Already in ISO format
+                duration: entry.seconds, // This is the duration in seconds
+                description: item.description || '',
+                tags: [], // Tags might be available at the parent level
+                tag_ids: item.tag_ids || [],
+                user_id: item.user_id
+              }
+              
+              // Debug log for problematic entries
+              if (!timeEntry.start || !timeEntry.stop || !timeEntry.duration) {
+                console.log('Found entry with missing data:', {
+                  id: timeEntry.id,
+                  start: timeEntry.start,
+                  stop: timeEntry.stop,
+                  duration: timeEntry.duration,
+                  description: timeEntry.description
+                })
+              }
+              
+              transformedEntries.push(timeEntry)
+            })
+          }
+        })
+        
+        console.log(`Extracted ${transformedEntries.length} time entries from response.`)
+        
+        entriesForRange = [...entriesForRange, ...transformedEntries]
+        console.log(`Total entries for this date range so far: ${entriesForRange.length}`)
+        
+        // Check if there are more entries to fetch
+        if (nextRowNumber && transformedEntries.length > 0) {
+          firstRowNumber = parseInt(nextRowNumber, 10)
           // Add a small delay between requests to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 300))
         } else {
           hasMore = false
+          console.log('No more entries for this date range, stopping pagination')
         }
+      } catch (error) {
+        console.error('Error fetching time entries:', error)
+        hasMore = false
       }
     }
-
-    console.log(`Finished fetching all entries. Total: ${allEntries.length}`)
-    return allEntries
-  }, [])
+    
+    // Post-process entries to ensure all required fields have valid values
+    const validatedEntries = entriesForRange.map(entry => {
+      // Ensure start is a valid ISO string
+      if (!entry.start) {
+        console.warn(`Entry ${entry.id} missing start time, using fallback.`)
+        entry.start = new Date(0).toISOString() // Use epoch time as fallback
+      }
+      
+      // Ensure stop is a valid ISO string for completed entries
+      if (!entry.stop && entry.duration > 0) {
+        console.warn(`Entry ${entry.id} missing stop time but has duration, calculating stop.`)
+        // Calculate stop time from start + duration
+        const startDate = new Date(entry.start)
+        const stopDate = new Date(startDate.getTime() + entry.duration * 1000)
+        entry.stop = stopDate.toISOString()
+      }
+      
+      // Ensure duration is valid
+      if (!entry.duration && entry.start && entry.stop) {
+        console.warn(`Entry ${entry.id} missing duration but has start/stop times, calculating duration.`)
+        // Calculate duration from start and stop times
+        const startTime = new Date(entry.start).getTime()
+        const stopTime = new Date(entry.stop).getTime()
+        entry.duration = Math.round((stopTime - startTime) / 1000)
+      }
+      
+      return entry
+    })
+    
+    console.log(`Returning ${validatedEntries.length} validated entries for date range ${startDate} to ${endDate}`)
+    return validatedEntries
+  }
 
   const fetchData = useCallback(async (apiToken: string) => {
     if (!apiToken) {

@@ -236,6 +236,121 @@
         }
       ],
       "description": "Requests for managing time entries"
+    },
+    {
+      "name": "Reports API",
+      "item": [
+        {
+          "name": "Search Time Entries (Detailed Report)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"start_date\": \"{{startDate}}\",\n    \"end_date\": \"{{endDate}}\",\n    \"page_size\": 300,\n    \"order_by\": \"date\",\n    \"order_dir\": \"asc\"{{#firstRowNumber}},\n    \"first_row_number\": {{firstRowNumber}}{{/firstRowNumber}}\n}"
+            },
+            "url": {
+              "raw": "{{togglBaseUrl}}/reports/api/v3/workspace/{{workspaceId}}/search/time_entries",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "api",
+                "v3",
+                "workspace",
+                "{{workspaceId}}",
+                "search",
+                "time_entries"
+              ]
+            },
+            "description": "Search time entries using Reports API v3. Returns paginated results with 50 entries per page. Note: The Reports API has a 366-day maximum date range limit. To fetch more than a year of data, you'll need to make multiple requests with different date ranges. First_row_number should only be included for pagination after the first request."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Ensure apiToken is encoded",
+                  "const apiToken = pm.environment.get('apiToken');",
+                  "if (apiToken) {",
+                  "    const encodedToken = btoa(`${apiToken}:api_token`);",
+                  "    pm.environment.set('encodedApiToken', encodedToken);",
+                  "}",
+                  "",
+                  "// Set default first row number if not already set",
+                  "if (!pm.environment.get('firstRowNumber')) {",
+                  "    pm.environment.set('firstRowNumber', 0);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Store pagination values for next request",
+                  "if (pm.response.code === 200) {",
+                  "    const nextRowNumber = pm.response.headers.get('X-Next-Row-Number');",
+                  "    if (nextRowNumber) {",
+                  "        pm.environment.set('firstRowNumber', nextRowNumber);",
+                  "        console.log(`Next row number: ${nextRowNumber}`);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export Detailed Report (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Basic {{encodedApiToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"start_date\": \"{{startDate}}\",\n    \"end_date\": \"{{endDate}}\"\n}"
+            },
+            "url": {
+              "raw": "{{togglBaseUrl}}/reports/api/v3/workspace/{{workspaceId}}/search/time_entries.csv",
+              "host": [
+                "{{togglBaseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "api",
+                "v3",
+                "workspace",
+                "{{workspaceId}}",
+                "search",
+                "time_entries.csv"
+              ]
+            },
+            "description": "Export time entries as CSV file using Reports API v3."
+          }
+        }
+      ],
+      "description": "Requests for Toggl Reports API v3"
     }
   ],
   "variable": [
@@ -270,6 +385,24 @@
       "value": "2023-01-01T00:00:00Z",
       "type": "string",
       "description": "RFC3339 formatted date"
+    },
+    {
+      "key": "startDate",
+      "value": "2020-01-01",
+      "type": "string",
+      "description": "Start date for reports in YYYY-MM-DD format"
+    },
+    {
+      "key": "endDate",
+      "value": "2024-12-31",
+      "type": "string",
+      "description": "End date for reports in YYYY-MM-DD format"
+    },
+    {
+      "key": "firstRowNumber",
+      "value": "0",
+      "type": "string",
+      "description": "First row number for pagination"
     }
   ]
 } 
